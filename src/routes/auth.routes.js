@@ -12,7 +12,7 @@ const signToken = (pm) =>
 // POST /api/auth/login  { email (or employeeId), password }
 router.post('/login', async (req, res) => {
   try {
-    const { email, password } = req.body || {};
+    const { email, password, designation } = req.body || {};
     if (!email || !password) return res.status(400).json({ success: false, message: 'Please fill in all fields' });
 
     const identifier = String(email).trim();
@@ -25,6 +25,13 @@ router.post('/login', async (req, res) => {
     }
     if (!pm.isActive) {
       return res.status(403).json({ success: false, message: 'Account is deactivated. Contact the Sales Head.' });
+    }
+
+    // One portal, two designations. If the login form sent a role, it must match the
+    // account's stored designation (legacy accounts with none default to Purchase Manager).
+    const storedDesignation = pm.designation || 'Purchase Manager';
+    if (designation && ['Purchase Manager', 'Purchase Head'].includes(designation) && designation !== storedDesignation) {
+      return res.status(403).json({ success: false, message: `This account is registered as ${storedDesignation}. Please select "${storedDesignation}" to sign in.` });
     }
 
     pm.lastLoginAt = new Date();
