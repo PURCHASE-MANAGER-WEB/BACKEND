@@ -4,7 +4,7 @@ const Payment = require('../models/Payment');
 const PurchaseOrder = require('../models/PurchaseOrder');
 const { protect, restrictTo } = require('../middleware/auth');
 
-const CAN = ['purchase_manager', 'Sales Head'];
+const CAN = ['purchase_manager', 'Sales Head', 'accounts_manager'];
 router.use(protect, restrictTo(...CAN));
 
 const num = (v) => { const n = parseFloat(v); return isFinite(n) ? n : 0; };

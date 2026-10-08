@@ -5,7 +5,7 @@ const router = require('express').Router();
 const Invoice = require('../models/Invoice');
 const { protect, restrictTo } = require('../middleware/auth');
 
-const CAN = ['purchase_manager', 'Sales Head'];
+const CAN = ['purchase_manager', 'Sales Head', 'accounts_manager'];
 router.use(protect, restrictTo(...CAN));
 
 const MAX = 12 * 1024 * 1024; // 12 MB

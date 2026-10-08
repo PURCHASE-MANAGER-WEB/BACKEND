@@ -3,7 +3,7 @@ const router = require('express').Router();
 const PurchaseOrder = require('../models/PurchaseOrder');
 const { protect, restrictTo } = require('../middleware/auth');
 
-const CAN = ['purchase_manager', 'Sales Head'];
+const CAN = ['purchase_manager', 'Sales Head', 'accounts_manager'];
 router.use(protect, restrictTo(...CAN));
 
 router.get('/', async (req, res) => {
