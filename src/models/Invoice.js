@@ -10,6 +10,11 @@ const InvoiceSchema = new mongoose.Schema(
     type: { type: String, default: 'application/pdf' },
     size: { type: Number, default: 0 },
     data: Buffer, // raw PDF bytes
+    
+    // Accounts Module fields
+    status: { type: String, default: 'Pending Verification' },
+    invoiceNo: { type: String },
+    invoiceDate: { type: String },
   },
   { timestamps: true, collection: 'purchase_invoices' }
 );
