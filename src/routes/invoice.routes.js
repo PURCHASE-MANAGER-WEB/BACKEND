@@ -33,6 +33,32 @@ router.put('/:po', async (req, res) => {
   }
 });
 
+// GET /api/invoices - list all invoices metadata (without file bytes)
+router.get('/', async (req, res) => {
+  try {
+    const docs = await Invoice.find({}).select('-data').lean();
+    res.json(docs);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// PUT /api/invoices/:po/details - update invoice structured data for Accounts
+router.put('/:po/details', async (req, res) => {
+  try {
+    const po = decodeURIComponent(req.params.po);
+    const updates = req.body || {};
+    const doc = await Invoice.findOneAndUpdate(
+      { po },
+      { $set: updates },
+      { new: true, upsert: true, setDefaultsOnInsert: true }
+    ).select('-data');
+    res.json(doc);
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+});
+
 // GET /api/invoices/:po/meta — lightweight existence/metadata check (no bytes).
 router.get('/:po/meta', async (req, res) => {
   try {
