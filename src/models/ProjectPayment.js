@@ -36,6 +36,7 @@ const ProjectPaymentSchema = new mongoose.Schema(
     dueDate: String, // expected payment due date (drives overdue)
     update: String, // latest update / remark
     paymentTerms: String,
+    paymentMethod: String, // default/expected collection method for the order
     payments: [PaymentLineSchema], // client receipts (partial / multiple collections)
     notes: String,
   },
