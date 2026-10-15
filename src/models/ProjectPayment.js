@@ -1,12 +1,21 @@
 const mongoose = require('mongoose');
 
-// Project payment schedule — milestone-based, matching the Sales Coordinator
-// "Order Confirmation" form: a quoted/order value plus payment-term milestones,
-// each a term, a percentage, the value (quoted × %/100) and a paid date/flag so
-// it also works as a tracker. Linked to a project by name. strict:false keeps any
-// legacy flat fields (p1..p5) readable.
-const MilestoneSchema = new mongoose.Schema(
-  { term: String, percentage: Number, value: Number, date: String, paid: Boolean },
+// Client payment record — money RECEIVED from the client for a project/order.
+// Mirrors the "Payment Pending Cases" sheet column-for-column AND doubles as the
+// client-side ledger behind Payment Progress → Client Payment: an order value,
+// payment terms and an unlimited list of receipts (each with amount, date, method,
+// reference and remarks) so partial / multiple collections are fully supported.
+// Kept completely separate from vendor payments (purchase_payments). Linked to a
+// project by name. strict:false keeps any legacy milestone fields readable.
+const PaymentLineSchema = new mongoose.Schema(
+  {
+    amount: Number,
+    date: String,
+    method: String,
+    refNo: String,
+    remarks: String,
+    dueDate: String,
+  },
   { _id: false }
 );
 
@@ -15,8 +24,18 @@ const ProjectPaymentSchema = new mongoose.Schema(
     id: { type: String, required: true, unique: true }, // PPM-001
     project: String,
     customerName: { type: String, required: true },
-    quotedValue: { type: Number, default: 0 },          // base order/project value
-    milestones: [MilestoneSchema],
+    clientName: String, // client / customer the money is received from
+    condition: { type: String, default: 'Payment Pending' }, // Payment Pending | Ongoing | Completed
+    totalOrderValue: { type: Number, default: 0 },
+    collectionSoFar: { type: Number, default: 0 }, // kept in sync with the sum of receipts
+    budget: { type: Number, default: 0 },
+    afterBudgetOutstanding: { type: Number, default: 0 }, // after budget final outstanding
+    collectionAmount: { type: Number, default: 0 },
+    collectionDate: String,
+    dueDate: String, // expected payment due date (drives overdue)
+    update: String, // latest update / remark
+    paymentTerms: String,
+    payments: [PaymentLineSchema], // client receipts (partial / multiple collections)
     notes: String,
   },
   { timestamps: true, strict: false, collection: 'purchase_project_payments' }
