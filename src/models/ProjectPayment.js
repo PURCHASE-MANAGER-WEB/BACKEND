@@ -32,6 +32,7 @@ const ProjectPaymentSchema = new mongoose.Schema(
     afterBudgetOutstanding: { type: Number, default: 0 }, // after budget final outstanding
     collectionAmount: { type: Number, default: 0 },
     collectionDate: String,
+    collectionMethod: String, // UPI / Cash / Cheque / Bank Transfer / Card / Other
     dueDate: String, // expected payment due date (drives overdue)
     update: String, // latest update / remark
     paymentTerms: String,
