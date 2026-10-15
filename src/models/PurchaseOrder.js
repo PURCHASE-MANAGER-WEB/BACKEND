@@ -8,7 +8,7 @@ const PurchaseOrderSchema = new mongoose.Schema(
     id: { type: String, required: true, unique: true }, // client-generated line id
     po: { type: String, required: true },   // PO-001
     poDate: String,
-    vid: { type: String, required: true },  // supplier id (VEN-xxx)
+    vid: { type: String },                   // supplier id (VEN-xxx); optional for a manually-typed vendor
     project: String,
     material: String,
     spec: String,

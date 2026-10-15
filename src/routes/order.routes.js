@@ -14,7 +14,7 @@ router.get('/', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const b = req.body || {};
-    if (!b.id || !b.po || !b.vid) return res.status(400).json({ message: 'id, PO number and supplier are required' });
+    if (!b.id || !b.po) return res.status(400).json({ message: 'id and PO number are required' });
     res.status(201).json(await PurchaseOrder.create(b));
   } catch (err) {
     if (err && err.code === 11000) return res.status(409).json({ message: 'A line with this id already exists' });
