@@ -8,6 +8,8 @@ const CAN = ['purchase_manager', 'Sales Head', 'accounts_manager'];
 router.use(protect, restrictTo(...CAN));
 
 const num = (v) => { const n = parseFloat(v); return isFinite(n) ? n : 0; };
+const actorOf = (req) => (req.pm && req.pm.name) || (req.auth && req.auth.role === 'accounts_manager' ? 'Accounts Manager' : (req.auth && req.auth.role) || 'System');
+const nowIso = () => new Date().toISOString();
 
 // Keep a PO's rolled-up paid amount (stored on its lines) in sync with the payment ledger,
 // so the dashboard, Purchase Progress and all cards stay correct. The whole paid total is
@@ -39,6 +41,14 @@ router.post('/', async (req, res) => {
     const b = { ...(req.body || {}) };
     if (!b.po) return res.status(400).json({ message: 'PO number is required' });
     delete b.id;
+    // Duplicate-entry guard: same PO + amount + date + (non-empty) reference.
+    if (String(b.refNo || '').trim()) {
+      const dup = await Payment.findOne({ po: b.po, amount: num(b.amount), date: b.date || '', refNo: String(b.refNo).trim() });
+      if (dup) return res.status(409).json({ message: `A payment of this amount with reference "${String(b.refNo).trim()}" is already recorded for ${b.po}.` });
+    }
+    const actor = actorOf(req);
+    b.createdBy = actor;
+    b.events = [{ action: 'created', at: nowIso(), by: actor }];
     for (let i = 0; i < 50; i++) {
       b.id = await nextId();
       try {
@@ -54,8 +64,9 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     const body = { ...(req.body || {}) };
-    delete body.id;
-    const doc = await Payment.findOneAndUpdate({ id: req.params.id }, { $set: body }, { new: true });
+    delete body.id; delete body.events; delete body.createdBy;
+    const ev = { action: 'updated', at: nowIso(), by: actorOf(req) };
+    const doc = await Payment.findOneAndUpdate({ id: req.params.id }, { $set: body, $push: { events: ev } }, { new: true });
     if (!doc) return res.status(404).json({ message: 'Payment not found' });
     await syncPoPaid(doc.po);
     res.json(doc);

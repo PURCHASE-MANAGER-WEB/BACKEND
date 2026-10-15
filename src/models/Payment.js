@@ -14,6 +14,8 @@ const PaymentSchema = new mongoose.Schema(
     refNo: String,       // transaction / reference number
     remarks: String,
     dueDate: String,     // payment due date (YYYY-MM-DD)
+    createdBy: String,   // who recorded it (audit)
+    events: [{ action: String, at: String, by: String, note: String, _id: false }], // audit trail
   },
   { timestamps: true, collection: 'purchase_payments' }
 );
