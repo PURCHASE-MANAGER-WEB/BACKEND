@@ -24,6 +24,7 @@ router.get('/', async (req, res) => {
 
 router.post('/', async (req, res) => {
   try {
+    if (isRestrictedPM(req)) return res.status(403).json({ message: 'Purchase Managers are not allowed to create projects.' });
     const b = { ...(req.body || {}) };
     if (!String(b.name || '').trim()) return res.status(400).json({ message: 'Project name is required' });
     delete b.id;
