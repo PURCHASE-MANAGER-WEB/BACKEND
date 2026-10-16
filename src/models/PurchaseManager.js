@@ -10,7 +10,7 @@ const purchaseManagerSchema = new mongoose.Schema(
     email: { type: String, required: true, lowercase: true, trim: true, unique: true },
     employeeId: { type: String, trim: true },
     role: { type: String, default: 'purchase_manager' }, // fixed role value
-    designation: { type: String, enum: ['Purchase Manager', 'Purchase Head'], default: 'Purchase Manager' }, // display-only label; role stays purchase_manager
+    designation: { type: String, enum: ['Purchase Manager', 'Purchase Head', 'Accounts Manager'], default: 'Purchase Manager' }, // drives the access role (Accounts Manager => accounts_manager)
     password: { type: String, required: true, minlength: 6, select: false },
     resetOtp: { type: String, select: false },
     resetOtpExpires: { type: Date, select: false },
@@ -39,11 +39,15 @@ purchaseManagerSchema.methods.toSafeJSON = function () {
     name: this.name,
     email: this.email,
     employeeId: this.employeeId,
-    role: this.role || 'purchase_manager',
+    role: (this.designation === 'Accounts Manager') ? 'accounts_manager' : 'purchase_manager',
     designation: this.designation || 'Purchase Manager',
     isActive: this.isActive,
     lastLoginAt: this.lastLoginAt,
   };
 };
+
+// Access role is derived from the designation, never trusted from the client.
+purchaseManagerSchema.statics.roleForDesignation = (designation) =>
+  (designation === 'Accounts Manager') ? 'accounts_manager' : 'purchase_manager';
 
 module.exports = mongoose.model('PurchaseManager', purchaseManagerSchema);

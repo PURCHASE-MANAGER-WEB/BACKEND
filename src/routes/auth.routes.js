@@ -5,7 +5,7 @@ const PurchaseManager = require('../models/PurchaseManager');
 const { protect } = require('../middleware/auth');
 
 const signToken = (pm) =>
-  jwt.sign({ id: pm._id, role: 'purchase_manager' }, process.env.JWT_SECRET, {
+  jwt.sign({ id: pm._id, role: PurchaseManager.roleForDesignation(pm.designation) }, process.env.JWT_SECRET, {
     expiresIn: process.env.JWT_EXPIRES_IN || '1d',
   });
 
@@ -29,8 +29,11 @@ router.post('/login', async (req, res) => {
 
     // One portal, two designations. If the login form sent a role, it must match the
     // account's stored designation (legacy accounts with none default to Purchase Manager).
+    // One portal, three designations (Purchase Manager / Purchase Head / Accounts Manager).
+    // The selected role MUST match the account's stored designation — the access role is
+    // derived on the server from that designation, never trusted from the dropdown.
     const storedDesignation = pm.designation || 'Purchase Manager';
-    if (designation && ['Purchase Manager', 'Purchase Head'].includes(designation) && designation !== storedDesignation) {
+    if (designation && ['Purchase Manager', 'Purchase Head', 'Accounts Manager'].includes(designation) && designation !== storedDesignation) {
       return res.status(403).json({ success: false, message: `This account is registered as ${storedDesignation}. Please select "${storedDesignation}" to sign in.` });
     }
 
@@ -46,8 +49,8 @@ router.post('/login', async (req, res) => {
 
 // GET /api/auth/me  (protected)
 router.get('/me', protect, async (req, res) => {
-  if (req.auth.role !== 'purchase_manager' || !req.pm) {
-    return res.status(403).json({ success: false, message: 'Not a Purchase Manager session.' });
+  if (!['purchase_manager', 'accounts_manager'].includes(req.auth.role) || !req.pm) {
+    return res.status(403).json({ success: false, message: 'Not a valid portal session.' });
   }
   return res.json({ success: true, user: req.pm.toSafeJSON() });
 });
