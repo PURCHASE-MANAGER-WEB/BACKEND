@@ -14,6 +14,7 @@ const SupplierSchema = new mongoose.Schema(
     creditLimit: { type: Number, default: 0 },
     terms: String,
     status: { type: String, default: 'Active' },
+    type: { type: String, default: 'Supplier' }, // 'Supplier' | 'Fabricator'
   },
   { timestamps: true, strict: false, collection: 'purchase_suppliers' }
 );

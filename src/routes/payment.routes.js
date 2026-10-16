@@ -2,10 +2,10 @@
 const router = require('express').Router();
 const Payment = require('../models/Payment');
 const PurchaseOrder = require('../models/PurchaseOrder');
-const { protect, restrictTo } = require('../middleware/auth');
+const { protect, restrictTo, blockPurchaseManager } = require('../middleware/auth');
 
 const CAN = ['purchase_manager', 'Sales Head', 'accounts_manager'];
-router.use(protect, restrictTo(...CAN));
+router.use(protect, restrictTo(...CAN), blockPurchaseManager);
 
 const num = (v) => { const n = parseFloat(v); return isFinite(n) ? n : 0; };
 const actorOf = (req) => (req.pm && req.pm.name) || (req.auth && req.auth.role === 'accounts_manager' ? 'Accounts Manager' : (req.auth && req.auth.role) || 'System');

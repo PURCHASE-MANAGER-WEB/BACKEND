@@ -38,4 +38,14 @@ const restrictTo = (...roles) => (req, res, next) => {
   next();
 };
 
-module.exports = { protect, restrictTo };
+// Deny the restricted "Purchase Manager" designation from accounts/financial endpoints.
+// Purchase Head (same purchase_manager role) and Accounts Manager are allowed through —
+// the distinction is the account's stored designation, re-read from the DB in protect().
+const blockPurchaseManager = (req, res, next) => {
+  if (req.pm && (req.pm.designation || 'Purchase Manager') === 'Purchase Manager') {
+    return res.status(403).json({ success: false, message: 'This section is not available for your role.' });
+  }
+  next();
+};
+
+module.exports = { protect, restrictTo, blockPurchaseManager };

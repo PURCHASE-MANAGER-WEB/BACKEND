@@ -6,6 +6,11 @@ const { protect, restrictTo } = require('../middleware/auth');
 const CAN = ['purchase_manager', 'Sales Head', 'accounts_manager'];
 router.use(protect, restrictTo(...CAN));
 
+// The restricted "Purchase Manager" designation must not receive the client-money
+// fields (quoted value, payment-terms schedule). Purchase Head / Accounts get them.
+const isRestrictedPM = (req) => req.pm && (req.pm.designation || 'Purchase Manager') === 'Purchase Manager';
+const stripFinancial = (doc) => { const o = doc && doc.toObject ? doc.toObject() : { ...(doc || {}) }; delete o.quotedPrice; delete o.paymentTerms; return o; };
+
 const nextId = async () => {
   const rows = await Project.find({ id: /^PRJ-\d+$/ }).select('id').lean();
   const n = rows.map((r) => parseInt(String(r.id).replace(/\D/g, ''), 10) || 0);
@@ -13,7 +18,7 @@ const nextId = async () => {
 };
 
 router.get('/', async (req, res) => {
-  try { res.json(await Project.find().sort({ createdAt: -1 })); }
+  try { const docs = await Project.find().sort({ createdAt: -1 }); res.json(isRestrictedPM(req) ? docs.map(stripFinancial) : docs); }
   catch (err) { res.status(500).json({ message: err.message }); }
 });
 

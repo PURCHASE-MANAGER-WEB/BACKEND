@@ -1,10 +1,10 @@
 // Project payment schedule APIs — purchase_project_payments collection.
 const router = require('express').Router();
 const ProjectPayment = require('../models/ProjectPayment');
-const { protect, restrictTo } = require('../middleware/auth');
+const { protect, restrictTo, blockPurchaseManager } = require('../middleware/auth');
 
 const CAN = ['purchase_manager', 'Sales Head', 'accounts_manager'];
-router.use(protect, restrictTo(...CAN));
+router.use(protect, restrictTo(...CAN), blockPurchaseManager);
 
 const nextId = async () => {
   const rows = await ProjectPayment.find({ id: /^PPM-\d+$/ }).select('id').lean();
