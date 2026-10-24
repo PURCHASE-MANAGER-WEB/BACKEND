@@ -23,4 +23,6 @@ const PurchaseOrderSchema = new mongoose.Schema(
   { timestamps: true, strict: false, collection: 'purchase_orders' }
 );
 
+PurchaseOrderSchema.index({ po: 1 });
+
 module.exports = mongoose.model('PurchaseOrder', PurchaseOrderSchema);

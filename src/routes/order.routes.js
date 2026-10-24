@@ -31,6 +31,26 @@ router.put('/:id', async (req, res) => {
   } catch (err) { res.status(400).json({ message: err.message }); }
 });
 
+// Bulk upsert + delete all lines of one PO in a SINGLE request/DB write (fast save).
+router.put('/po/:po/bulk', async (req, res) => {
+  try {
+    const po = req.params.po;
+    const { lines = [], deleteIds = [] } = req.body || {};
+    if (!Array.isArray(lines)) return res.status(400).json({ message: 'lines must be an array' });
+    const ops = [];
+    for (const l of lines) {
+      if (!l || !l.id) return res.status(400).json({ message: 'every line needs an id' });
+      ops.push({ updateOne: { filter: { id: l.id }, update: { $set: { ...l, po } }, upsert: true } });
+    }
+    if (Array.isArray(deleteIds) && deleteIds.length) ops.push({ deleteMany: { filter: { id: { $in: deleteIds } } } });
+    if (ops.length) await PurchaseOrder.bulkWrite(ops, { ordered: false });
+    res.json(await PurchaseOrder.find({ po }).sort({ po: 1 }));
+  } catch (err) {
+    if (err && err.code === 11000) return res.status(409).json({ message: 'A line with this id already exists' });
+    res.status(400).json({ message: err.message });
+  }
+});
+
 // Delete a WHOLE purchase order (all its lines). Blocked when money is recorded —
 // any vendor payment against the PO, or any line already marked paid — so a PO tied
 // to a completed transaction cannot be removed by accident.
