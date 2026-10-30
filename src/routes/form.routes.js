@@ -13,11 +13,13 @@ router.use(protect, restrictTo(...CAN));
 
 const MAX = 12 * 1024 * 1024; // 12 MB — fits inside a single Mongo document
 
-const ALLOWED_EXT = /\.(pdf|jpe?g|png|xls|xlsx|doc|docx)$/i;
-const ALLOWED_TYPE = /(pdf|jpeg|jpg|png|vnd\.ms-excel|spreadsheetml|msword|wordprocessingml|octet-stream)/i;
+const ALLOWED_EXT = /\.(pdf|jpe?g|png|xls|xlsx|doc|docx|dwg|dxf|zip)$/i;
+const ALLOWED_TYPE = /(pdf|jpeg|jpg|png|vnd\.ms-excel|spreadsheetml|msword|wordprocessingml|zip|acad|dxf|octet-stream)/i;
 const okType = (name, type) => ALLOWED_EXT.test(String(name || '')) || ALLOWED_TYPE.test(String(type || ''));
 
-const prefixFor = (kind) => (String(kind) === 'proposal' ? 'FRM-PR-' : 'FRM-HO-');
+const prefixFor = (kind) => (kind === 'proposal' ? 'FRM-PR-' : kind === 'design' ? 'FRM-DS-' : 'FRM-HO-');
+const KINDS = ['proposal', 'handover', 'design'];
+const CATS = ['completed', 'design', 'support'];
 
 // Allocate the next form id for a kind: FRM-PR-001 / FRM-HO-001.
 const nextId = async (kind) => {
@@ -53,7 +55,7 @@ router.post('/', async (req, res) => {
   try {
     const b = { ...(req.body || {}) };
     delete b.formId;
-    const kind = b.kind === 'proposal' ? 'proposal' : 'handover';
+    const kind = KINDS.includes(b.kind) ? b.kind : 'handover';
     b.kind = kind;
     for (let i = 0; i < 50; i++) {
       b.formId = await nextId(kind);
@@ -110,7 +112,7 @@ router.post('/:id/files', async (req, res) => {
     if (buf.length > MAX) return res.status(413).json({ message: 'That file is larger than 12 MB.' });
     const doc = await FormFile.findOneAndUpdate(
       { formId, fileId },
-      { $set: { category: category === 'completed' ? 'completed' : 'support', name: name || 'file', type: type || 'application/octet-stream', size: size || buf.length, data: buf } },
+      { $set: { category: CATS.includes(category) ? category : 'support', name: name || 'file', type: type || 'application/octet-stream', size: size || buf.length, data: buf } },
       { new: true, upsert: true, setDefaultsOnInsert: true }
     );
     res.json({ ok: true, fileId: doc.fileId, category: doc.category, name: doc.name, type: doc.type, size: doc.size, formId });
