@@ -41,8 +41,17 @@ router.put('/:id', async (req, res) => {
   try {
     const body = { ...(req.body || {}) };
     delete body.id;
+    const prev = await Project.findOne({ id: req.params.id });
+    if (!prev) return res.status(404).json({ message: 'Project not found' });
     const doc = await Project.findOneAndUpdate({ id: req.params.id }, { $set: body }, { new: true, runValidators: true });
-    if (!doc) return res.status(404).json({ message: 'Project not found' });
+    // Keep purchase orders linked when a project is renamed: move every PO on the old
+    // name to the new name (both the primary `project` and the `projects[]` list).
+    const oldName = String(prev.name || '').trim(), newName = String(doc.name || '').trim();
+    if (oldName && newName && oldName !== newName) {
+      const PurchaseOrder = require('../models/PurchaseOrder');
+      await PurchaseOrder.updateMany({ project: oldName }, { $set: { project: newName } });
+      await PurchaseOrder.updateMany({ projects: oldName }, { $set: { 'projects.$[el]': newName } }, { arrayFilters: [{ el: oldName }] });
+    }
     res.json(doc);
   } catch (err) { res.status(400).json({ message: err.message }); }
 });

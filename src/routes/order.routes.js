@@ -2,10 +2,24 @@
 const router = require('express').Router();
 const PurchaseOrder = require('../models/PurchaseOrder');
 const Payment = require('../models/Payment');
-const { protect, restrictTo } = require('../middleware/auth');
+const { protect, restrictTo, blockPurchaseManager } = require('../middleware/auth');
 
 const CAN = ['purchase_manager', 'Sales Head', 'accounts_manager'];
 router.use(protect, restrictTo(...CAN));
+
+// Relink every PO on one (old / misspelled) project name to another — a safe, explicit
+// cleanup for orphaned POs. Non-PM only (project management is not a Purchase Manager action).
+router.post('/relink', blockPurchaseManager, async (req, res) => {
+  try {
+    const from = String((req.body || {}).from || '').trim();
+    const to = String((req.body || {}).to || '').trim();
+    if (!from || !to) return res.status(400).json({ message: 'from and to project names are required' });
+    if (from === to) return res.json({ ok: true, updated: 0 });
+    const r = await PurchaseOrder.updateMany({ project: from }, { $set: { project: to } });
+    await PurchaseOrder.updateMany({ projects: from }, { $set: { 'projects.$[el]': to } }, { arrayFilters: [{ el: from }] });
+    res.json({ ok: true, updated: r.modifiedCount != null ? r.modifiedCount : (r.nModified || 0) });
+  } catch (err) { res.status(400).json({ message: err.message }); }
+});
 
 router.get('/', async (req, res) => {
   try { res.json(await PurchaseOrder.find().sort({ po: 1 })); }
