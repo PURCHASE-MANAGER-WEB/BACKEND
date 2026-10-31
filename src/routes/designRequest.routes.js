@@ -4,6 +4,8 @@
 const router = require('express').Router();
 const DesignRequest = require('../models/DesignRequest');
 const DesignFile = require('../models/DesignFile');
+const DesignNotification = require('../models/DesignNotification');
+const Project = require('../models/Project');
 const { protect, restrictTo } = require('../middleware/auth');
 
 // Purchase Manager, Purchase Head (purchase_manager role) and Sales Head may raise
@@ -41,6 +43,29 @@ router.post('/', async (req, res) => {
   try {
     const b = { ...(req.body || {}) };
     delete b._id; delete b.id;
+
+    // Pull the full project from purchase_projects (shared DB) and embed a snapshot
+    // so the Design CRM shows complete project details without anyone re-typing them.
+    let proj = null;
+    try {
+      if (b.procurementProjectId) proj = await Project.findOne({ id: b.procurementProjectId }).lean();
+      if (!proj && b.procurementProjectCode) proj = await Project.findOne({ code: b.procurementProjectCode }).lean();
+      if (!proj && b.projectName) proj = await Project.findOne({ name: b.projectName }).lean();
+    } catch { /* non-fatal */ }
+    if (proj) {
+      if (!b.customerName) b.customerName = proj.client || '';
+      if (!b.location) b.location = proj.projectLocation || proj.siteAddress || '';
+      if (!b.projectType) b.projectType = proj.typeOfProject || b.projectType || '';
+      if (!b.procurementProjectCode) b.procurementProjectCode = proj.code || '';
+      b.projectSnapshot = {
+        client: proj.client || '', location: proj.projectLocation || '', siteAddress: proj.siteAddress || '',
+        typeOfProject: proj.typeOfProject || '', projectSize: proj.projectSize || '',
+        materialDescription: proj.materialDescription || '', contactDetails: proj.contactDetails || proj.mobileNumber || '',
+        salespersonName: proj.salespersonName || '', quotedPrice: proj.quotedPrice != null ? proj.quotedPrice : '',
+        tentativeCompletionDate: proj.tentativeCompletionDate || '',
+      };
+    }
+
     for (let i = 0; i < 50; i++) {
       try {
         const doc = await DesignRequest.create({
@@ -53,6 +78,25 @@ router.post('/', async (req, res) => {
           requestedBy: b.requestedBy || (((req.auth && req.auth.name) || 'Procurement') + ' (Procurement)'),
           history: [{ title: 'Design request raised from Procurement', time: new Date().toISOString().slice(0, 16).replace('T', ' '), desc: `${b.projectName || ''}${b.procurementProjectCode ? ' (' + b.procurementProjectCode + ')' : ''}` }],
         });
+
+        // Notify the Design Head (into the shared design_notifications collection).
+        try {
+          const reqLabel = b.requirement || b.service || 'Design';
+          await DesignNotification.create({
+            audience: 'head',
+            type: 'assignment',
+            category: 'Assignments',
+            title: 'New design request from Procurement',
+            message: `${doc.projectName || doc.id}${doc.procurementProjectCode ? ' (' + doc.procurementProjectCode + ')' : ''} \u2014 ${reqLabel}${doc.priority ? ' \u00b7 ' + doc.priority : ''}${doc.dueDate ? ' \u00b7 due ' + doc.dueDate : ''}`,
+            desc: `${doc.projectName || doc.id}${doc.procurementProjectCode ? ' (' + doc.procurementProjectCode + ')' : ''} \u2014 ${reqLabel}`,
+            time: 'just now',
+            read: false,
+            requestId: doc.id,
+            projectName: doc.projectName || '',
+            projectCode: doc.procurementProjectCode || '',
+          });
+        } catch { /* notification failure must not fail the request */ }
+
         return res.status(201).json(doc.toObject());
       } catch (e) { if (e && e.code === 11000) continue; throw e; }
     }
