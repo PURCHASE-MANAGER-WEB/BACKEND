@@ -50,6 +50,7 @@ router.post('/', async (req, res) => {
           status: 'New',
           assignedDesigner: 'Unassigned',
           requestedByUser: (req.auth && req.auth.name) || b.requestedByUser || '',
+          requestedBy: b.requestedBy || (((req.auth && req.auth.name) || 'Procurement') + ' (Procurement)'),
           history: [{ title: 'Design request raised from Procurement', time: new Date().toISOString().slice(0, 16).replace('T', ' '), desc: `${b.projectName || ''}${b.procurementProjectCode ? ' (' + b.procurementProjectCode + ')' : ''}` }],
         });
         return res.status(201).json(doc.toObject());
