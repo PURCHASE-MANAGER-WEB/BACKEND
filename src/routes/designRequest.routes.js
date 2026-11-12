@@ -72,6 +72,7 @@ router.post('/', async (req, res) => {
           ...b,
           id: await nextId(),
           source: 'procurement',
+          requestFrom: b.requestFrom || 'Project Team',
           status: 'New',
           assignedDesigner: 'Unassigned',
           requestedByUser: (req.auth && req.auth.name) || b.requestedByUser || '',
