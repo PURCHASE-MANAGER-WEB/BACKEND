@@ -10,7 +10,6 @@ const projectPaymentRoutes = require('./projectPayment.routes');
 const challanRoutes = require('./challan.routes');
 const formRoutes = require('./form.routes');
 const designRequestRoutes = require('./designRequest.routes');
-const historyRoutes = require('./history.routes');
 
 router.get('/health', (req, res) => res.json({ status: 'ok', service: 'purchase-manager', time: new Date().toISOString() }));
 router.use('/auth', authRoutes);
@@ -24,6 +23,5 @@ router.use('/project-payments', projectPaymentRoutes);
 router.use('/challans', challanRoutes);
 router.use('/forms', formRoutes);
 router.use('/design-requests', designRequestRoutes);
-router.use('/history', historyRoutes);
 
 module.exports = router;

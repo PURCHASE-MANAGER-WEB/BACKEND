@@ -2,7 +2,14 @@
 const router = require('express').Router();
 const Project = require('../models/Project');
 const { protect, restrictTo } = require('../middleware/auth');
-const { logCreation } = require('../utils/history');
+const ProjectHistory = require('../models/ProjectHistory');
+
+// Fields tracked in the project change history (label shown to the user).
+const HIST_FIELDS = { name: 'Name', code: 'Code', status: 'Status', client: 'Client', budget: 'Budget', creationDate: 'Creation Date', projectLocation: 'Project Location', contactDetails: 'Contact Details', mobileNumber: 'Mobile', altMobile: 'Alternate Mobile', emailWhatsapp: 'Email / WhatsApp', gstNumber: 'GST Number', billingName: 'Billing Name', siteAddress: 'Site Address', billingAddress: 'Billing Address', salespersonName: 'Salesperson', dateOfOrder: 'Date of Order', proposalRefNo: 'Proposal Ref', leadRef: 'Lead Ref', typeOfProject: 'Type of Project', projectSize: 'Project Size', materialDescription: 'Material Description', startDate: 'Start Date', tentativeCompletionDate: 'Completion Date', quotedPrice: 'Quoted Price', notes: 'Notes' };
+const diffFields = (prev, body) => { const out = []; for (const k of Object.keys(HIST_FIELDS)) { if (!(k in body)) continue; const a = prev[k] == null ? '' : String(prev[k]); const b = body[k] == null ? '' : String(body[k]); if (a !== b) out.push({ field: HIST_FIELDS[k], from: a, to: b }); } return out; };
+async function logProjectEvent({ projectId, action, req, changes, summary, at }) {
+  try { await ProjectHistory.create({ projectId: String(projectId), action: action || 'updated', byName: (req && req.pm && req.pm.name) || (req && req.auth && req.auth.role) || 'User', byRole: (req && req.auth && req.auth.role) || '', changes: Array.isArray(changes) ? changes : [], summary: summary || '', at: at ? new Date(at) : new Date() }); } catch (e) { /* non-fatal */ }
+}
 
 const CAN = ['purchase_manager', 'Sales Head', 'accounts_manager'];
 router.use(protect, restrictTo(...CAN));
@@ -34,7 +41,7 @@ router.post('/', async (req, res) => {
       b.id = await nextId();
       try {
         const doc = await Project.create(b);
-        await logCreation({ key: 'project:' + doc.id, recordType: 'Project', refId: doc.id, name: doc.name, req, at: doc.createdAt });
+        await logProjectEvent({ projectId: doc.id, action: 'created', req, summary: 'Project created', at: doc.createdAt });
         return res.status(201).json(doc);
       }
       catch (e) { if (e && e.code === 11000) continue; throw e; }
@@ -50,6 +57,8 @@ router.put('/:id', async (req, res) => {
     const prev = await Project.findOne({ id: req.params.id });
     if (!prev) return res.status(404).json({ message: 'Project not found' });
     const doc = await Project.findOneAndUpdate({ id: req.params.id }, { $set: body }, { new: true, runValidators: true });
+    const changes = diffFields(prev.toObject ? prev.toObject() : prev, body);
+    if (changes.length) await logProjectEvent({ projectId: doc.id, action: 'updated', req, changes });
     // Keep purchase orders linked when a project is renamed: move every PO on the old
     // name to the new name (both the primary `project` and the `projects[]` list).
     const oldName = String(prev.name || '').trim(), newName = String(doc.name || '').trim();
@@ -72,6 +81,19 @@ router.delete('/:id', async (req, res) => {
     await Project.deleteOne({ id: req.params.id });
     res.json({ success: true });
   } catch (err) { res.status(400).json({ message: err.message }); }
+});
+
+router.get('/:id/history', async (req, res) => {
+  try {
+    const list = await ProjectHistory.find({ projectId: req.params.id }).sort({ at: -1, createdAt: -1 }).lean();
+    // For projects created before change-logging existed, show their real DB creation
+    // date as the first entry (never an invented date).
+    if (!list.some((e) => e.action === 'created')) {
+      const proj = await Project.findOne({ id: req.params.id }).select('createdAt creationDate').lean();
+      if (proj) list.push({ action: 'created', byName: '', byRole: '', changes: [], summary: 'Project created', at: proj.creationDate || proj.createdAt });
+    }
+    res.json(list);
+  } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
 module.exports = router;
