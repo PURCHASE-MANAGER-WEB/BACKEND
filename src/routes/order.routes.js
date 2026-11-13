@@ -21,6 +21,30 @@ router.post('/relink', blockPurchaseManager, async (req, res) => {
   } catch (err) { res.status(400).json({ message: err.message }); }
 });
 
+// Maintenance audit/fix: align each PO line's legacy `project` with its header
+// `projects[]` (the authoritative assignment). Sets project = projects[0] where the
+// line's project is not one of the header projects. Non-destructive: never touches
+// payments, attachments, quantities, or the projects[] assignment. ?dryRun=1 only reports.
+router.post('/reconcile-projects', blockPurchaseManager, async (req, res) => {
+  try {
+    const dry = String((req.query || {}).dryRun || '') === '1';
+    const all = await PurchaseOrder.find({});
+    const ops = []; const affected = new Set(); const details = [];
+    for (const l of all) {
+      const arr = (Array.isArray(l.projects) ? l.projects : []).map((x) => String(x || '').trim()).filter(Boolean);
+      if (!arr.length) continue;                 // no header assignment -> leave as-is
+      const cur = String(l.project || '').trim();
+      if (!arr.some((p) => p.toLowerCase() === cur.toLowerCase())) {
+        ops.push({ updateOne: { filter: { id: l.id }, update: { $set: { project: arr[0] } } } });
+        affected.add(l.po);
+        details.push({ po: l.po, from: cur, to: arr[0] });
+      }
+    }
+    if (ops.length && !dry) await PurchaseOrder.bulkWrite(ops, { ordered: false });
+    res.json({ dryRun: dry, scanned: all.length, fixed: ops.length, affectedPOs: [...affected].sort(), details: details.slice(0, 200) });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
 router.get('/', async (req, res) => {
   try { res.json(await PurchaseOrder.find().sort({ po: 1 })); }
   catch (err) { res.status(500).json({ message: err.message }); }
