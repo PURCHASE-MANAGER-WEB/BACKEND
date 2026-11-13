@@ -20,6 +20,7 @@ const ChallanSchema = new mongoose.Schema(
     po: String,                   // related PO number (optional)
     items: [ChallanItemSchema],
     status: { type: String, default: 'Received' }, // Pending / Partial / Received
+    value: Number,                // declared value of goods (₹)
     // Challan document / dispatch details (for the printed DC)
     supplierRef: String,          // e.g. "Quotation No. 334"
     vehicleNo: String,
