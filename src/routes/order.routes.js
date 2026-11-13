@@ -3,6 +3,7 @@ const router = require('express').Router();
 const PurchaseOrder = require('../models/PurchaseOrder');
 const Payment = require('../models/Payment');
 const { protect, restrictTo, blockPurchaseManager } = require('../middleware/auth');
+const { logCreation } = require('../utils/history');
 
 const CAN = ['purchase_manager', 'Sales Head', 'accounts_manager'];
 router.use(protect, restrictTo(...CAN));
@@ -30,7 +31,10 @@ router.post('/', async (req, res) => {
   try {
     const b = req.body || {};
     if (!b.id || !b.po) return res.status(400).json({ message: 'id and PO number are required' });
-    res.status(201).json(await PurchaseOrder.create(b));
+    const isNewPo = (await PurchaseOrder.countDocuments({ po: b.po })) === 0;
+    const createdLine = await PurchaseOrder.create(b);
+    if (isNewPo) await logCreation({ key: 'po:' + b.po, recordType: 'Purchase Order', refId: b.po, name: b.po, req, at: createdLine.createdAt });
+    res.status(201).json(createdLine);
   } catch (err) {
     if (err && err.code === 11000) return res.status(409).json({ message: 'A line with this id already exists' });
     res.status(400).json({ message: err.message });
@@ -57,7 +61,9 @@ router.put('/po/:po/bulk', async (req, res) => {
       ops.push({ updateOne: { filter: { id: l.id }, update: { $set: { ...l, po } }, upsert: true } });
     }
     if (Array.isArray(deleteIds) && deleteIds.length) ops.push({ deleteMany: { filter: { id: { $in: deleteIds } } } });
+    const poExisted = (await PurchaseOrder.countDocuments({ po })) > 0;
     if (ops.length) await PurchaseOrder.bulkWrite(ops, { ordered: false });
+    if (!poExisted) await logCreation({ key: 'po:' + po, recordType: 'Purchase Order', refId: po, name: po, req });
     res.json(await PurchaseOrder.find({ po }).sort({ po: 1 }));
   } catch (err) {
     if (err && err.code === 11000) return res.status(409).json({ message: 'A line with this id already exists' });

@@ -2,6 +2,7 @@
 const router = require('express').Router();
 const Project = require('../models/Project');
 const { protect, restrictTo } = require('../middleware/auth');
+const { logCreation } = require('../utils/history');
 
 const CAN = ['purchase_manager', 'Sales Head', 'accounts_manager'];
 router.use(protect, restrictTo(...CAN));
@@ -28,9 +29,14 @@ router.post('/', async (req, res) => {
     const b = { ...(req.body || {}) };
     if (!String(b.name || '').trim()) return res.status(400).json({ message: 'Project name is required' });
     delete b.id;
+    if (!b.creationDate) b.creationDate = new Date().toISOString().slice(0, 10);
     for (let i = 0; i < 50; i++) {
       b.id = await nextId();
-      try { return res.status(201).json(await Project.create(b)); }
+      try {
+        const doc = await Project.create(b);
+        await logCreation({ key: 'project:' + doc.id, recordType: 'Project', refId: doc.id, name: doc.name, req, at: doc.createdAt });
+        return res.status(201).json(doc);
+      }
       catch (e) { if (e && e.code === 11000) continue; throw e; }
     }
     throw new Error('Could not allocate a project id');
