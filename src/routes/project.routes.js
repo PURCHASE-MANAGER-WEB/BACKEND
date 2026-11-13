@@ -61,7 +61,7 @@ router.delete('/:id', async (req, res) => {
     const doc = await Project.findOne({ id: req.params.id });
     if (!doc) return res.status(404).json({ message: 'Project not found' });
     const PurchaseOrder = require('../models/PurchaseOrder');
-    const used = await PurchaseOrder.countDocuments({ project: doc.name });
+    const used = await PurchaseOrder.countDocuments({ $or: [{ project: doc.name }, { projects: doc.name }].concat(doc.code ? [{ project: doc.code }, { projects: doc.code }] : []) });
     if (used > 0) return res.status(409).json({ message: `This project has ${used} purchase-order line(s). Remove them before deleting the project.` });
     await Project.deleteOne({ id: req.params.id });
     res.json({ success: true });
