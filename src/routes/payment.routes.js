@@ -17,9 +17,15 @@ const nowIso = () => new Date().toISOString();
 // SUM of line.paid, so per-PO totals remain exact and nothing is duplicated.
 async function syncPoPaid(po) {
   if (!po) return;
-  const pays = await Payment.find({ po });
+  // Match the PO case/whitespace-insensitively so a payment reconciles ALL of a PO's lines
+  // even if some legacy lines hold a slightly different PO string — keeps the rolled-up
+  // paid total exact and never leaves a stray un-synced line behind.
+  const norm = String(po).trim().toUpperCase();
+  const esc = norm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const rx = new RegExp('^\\s*' + esc + '\\s*$', 'i');
+  const pays = await Payment.find({ po: rx });
   const total = pays.reduce((s, p) => s + num(p.amount), 0);
-  const lines = await PurchaseOrder.find({ po }).sort({ id: 1 });
+  const lines = await PurchaseOrder.find({ po: rx }).sort({ id: 1 });
   if (!lines.length) return;
   const ops = lines.map((l, i) => ({ updateOne: { filter: { id: l.id }, update: { $set: { paid: i === 0 ? total : 0 } } } }));
   await PurchaseOrder.bulkWrite(ops);

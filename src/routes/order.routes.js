@@ -54,6 +54,7 @@ router.post('/', async (req, res) => {
   try {
     const b = req.body || {};
     if (!b.id || !b.po) return res.status(400).json({ message: 'id and PO number are required' });
+    b.po = String(b.po).trim().toUpperCase(); // canonical PO number — never store whitespace/case variants
     res.status(201).json(await PurchaseOrder.create(b));
   } catch (err) {
     if (err && err.code === 11000) return res.status(409).json({ message: 'A line with this id already exists' });
@@ -72,7 +73,7 @@ router.put('/:id', async (req, res) => {
 // Bulk upsert + delete all lines of one PO in a SINGLE request/DB write (fast save).
 router.put('/po/:po/bulk', async (req, res) => {
   try {
-    const po = req.params.po;
+    const po = String(req.params.po || '').trim().toUpperCase(); // canonical PO number for every line of this PO
     const { lines = [], deleteIds = [] } = req.body || {};
     if (!Array.isArray(lines)) return res.status(400).json({ message: 'lines must be an array' });
     const ops = [];
