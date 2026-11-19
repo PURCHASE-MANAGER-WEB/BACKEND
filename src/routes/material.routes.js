@@ -148,4 +148,28 @@ router.post('/:id/convert', async (req, res) => {
   }
 });
 
+// Link an externally-created PO (built in the Purchase Orders section) to an APPROVED request → PO Created.
+// Does NOT create a PO line (the PO was already created by the PO builder). Prevents duplicates.
+router.patch('/:id/link-po', async (req, res) => {
+  try {
+    const m = await MaterialRequest.findById(req.params.id);
+    if (!m) return res.status(404).json({ message: 'Request not found' });
+    if (m.status === 'PO Created' || (m.poRef && String(m.poRef).trim())) {
+      return res.status(409).json({ message: `A purchase order (${m.poRef || 'existing'}) is already linked to this request` });
+    }
+    if (m.status !== 'Approved') return res.status(400).json({ message: `Approve the request before creating a PO (this one is "${m.status}")` });
+    const po = String((req.body || {}).po || '').trim().toUpperCase();
+    if (!po) return res.status(400).json({ message: 'PO number is required' });
+    const by = actor(req);
+    m.poRef = po;
+    m.status = 'PO Created';
+    m.decidedBy = by; m.decidedAt = new Date();
+    log(m, 'PO Created', by, `Purchase order ${po} created`);
+    m.procurementSeen = true;
+    m.requesterSeen = false;   // notify the Execution requester
+    await m.save();
+    res.json(m);
+  } catch (err) { res.status(400).json({ message: err.message }); }
+});
+
 module.exports = router;
