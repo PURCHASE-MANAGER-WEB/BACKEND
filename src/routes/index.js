@@ -11,6 +11,7 @@ const challanRoutes = require('./challan.routes');
 const formRoutes = require('./form.routes');
 const designRequestRoutes = require('./designRequest.routes');
 const materialRequestRoutes = require('./material.routes');
+const salesHandoverRoutes = require('./salesHandover.routes');
 
 router.get('/health', (req, res) => res.json({ status: 'ok', service: 'purchase-manager', time: new Date().toISOString() }));
 router.use('/auth', authRoutes);
@@ -25,5 +26,6 @@ router.use('/challans', challanRoutes);
 router.use('/forms', formRoutes);
 router.use('/design-requests', designRequestRoutes);
 router.use('/material-requests', materialRequestRoutes);
+router.use('/sales-handovers', salesHandoverRoutes);
 
 module.exports = router;
