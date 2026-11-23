@@ -4,13 +4,61 @@
 // created from it (→ PO Created). The Execution requester is notified back via the shared
 // doc's `requesterSeen` flag (their bell reads it); `procurementSeen` drives this portal's bell.
 const router = require('express').Router();
+const mongoose = require('mongoose');
 const MaterialRequest = require('../models/MaterialRequest');
 const PurchaseOrder = require('../models/PurchaseOrder');
+const ExecNotification = require('../models/ExecNotification');
 const { protect, restrictTo } = require('../middleware/auth');
 
 // Only the Purchase Manager / Purchase Head / Accounts Manager / Sales Head may act.
 const CAN = ['purchase_manager', 'accounts_manager', 'Sales Head'];
 router.use(protect, restrictTo(...CAN));
+
+// Percentage-based procurement stages (same ladder shown to the Execution team). The post-PO
+// delivery stages are advanced by Procurement as the material physically moves.
+const MR_PERCENT = { 'Pending Approval': 10, 'Under Review': 20, Approved: 30, 'PO Created': 40, Ordered: 50, Processing: 60, Dispatched: 70, 'In Transit': 80, 'Reached Site': 100, Rejected: 0 };
+const DELIVERY_STAGES = ['Ordered', 'Processing', 'Dispatched', 'In Transit', 'Reached Site'];
+const mrStageLabel = (m) => m.deliveryStage || m.status;
+const mrPercent = (m) => (m.status === 'Rejected' ? 0 : (MR_PERCENT[m.deliveryStage] != null ? MR_PERCENT[m.deliveryStage] : (MR_PERCENT[m.status] || 0)));
+
+// Drop an in-app notification straight into the assigned Execution team member's bell.
+// One alert per status change (no duplicates). Never throws — a notify failure must not fail the action.
+async function notifyExec(m, extra) {
+  try {
+    const userId = m.assigneeId || (m.createdBy && m.createdBy.id);
+    if (!userId) return;
+    const pct = mrPercent(m);
+    const stage = mrStageLabel(m);
+    const eta = m.deliveryStage && m.deliveryStage !== 'Reached Site' && m.neededBy ? ` · expected by ${m.neededBy}` : (m.poRef ? ` · PO ${m.poRef}` : '');
+    await ExecNotification.create({
+      userId,
+      type: 'material',
+      title: `${m.projectName || 'Project'} — material ${stage.toLowerCase()} (${pct}%)`,
+      message: `${m.material}${m.qty ? ` · Qty ${m.qty}${m.unit ? ' ' + m.unit : ''}` : ''} — ${stage} (${pct}%)${eta}${extra && extra.note ? ` · ${extra.note}` : ''}`,
+      link: '/materials',
+      read: false,
+    });
+  } catch (e) { /* non-fatal */ }
+}
+
+// BOQ documents uploaded by Execution live in the shared "material_boq" GridFS bucket.
+let boqBucketRef;
+const boqBucket = () => (boqBucketRef || (boqBucketRef = new mongoose.mongo.GridFSBucket(mongoose.connection.db, { bucketName: 'material_boq' })));
+
+// ---- View / download a BOQ document attached to a material request ----
+router.get('/:id/boq/:fileId', async (req, res) => {
+  try {
+    const m = await MaterialRequest.findById(req.params.id, { boq: 1 });
+    if (!m) return res.status(404).end();
+    const att = (m.boq || []).find((a) => a.fileId === req.params.fileId);
+    if (!att) return res.status(404).end();
+    let oid;
+    try { oid = new mongoose.Types.ObjectId(att.fileId); } catch { return res.status(404).end(); }
+    res.set('Content-Type', att.mime || 'application/octet-stream');
+    res.set('Content-Disposition', `${req.query.download ? 'attachment' : 'inline'}; filename="${encodeURIComponent(att.filename || 'boq')}"`);
+    boqBucket().openDownloadStream(oid).on('error', () => { if (!res.headersSent) res.status(404).end(); else res.end(); }).pipe(res);
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
 
 const STATUSES = ['Pending Approval', 'Approved', 'PO Created', 'Rejected'];
 const actor = (req) => ({ id: (req.pm && String(req.pm._id)) || req.auth.id || '', name: (req.pm && req.pm.name) || req.auth.role || 'Procurement', role: req.auth.role || 'purchase_manager', portal: 'procurement' });
@@ -77,6 +125,7 @@ router.patch('/:id/approve', async (req, res) => {
     m.procurementSeen = true;
     m.requesterSeen = false;   // notify the Execution requester
     await m.save();
+    await notifyExec(m);
     res.json(m);
   } catch (err) { res.status(400).json({ message: err.message }); }
 });
@@ -98,6 +147,7 @@ router.patch('/:id/reject', async (req, res) => {
     m.procurementSeen = true;
     m.requesterSeen = false;   // notify the Execution requester with the reason
     await m.save();
+    await notifyExec(m, { note: `Reason: ${reason}` });
     res.json(m);
   } catch (err) { res.status(400).json({ message: err.message }); }
 });
@@ -141,6 +191,7 @@ router.post('/:id/convert', async (req, res) => {
     m.procurementSeen = true;
     m.requesterSeen = false;   // notify the Execution requester
     await m.save();
+    await notifyExec(m);
     res.status(201).json({ request: m, po: line.po });
   } catch (err) {
     if (err && err.code === 11000) return res.status(409).json({ message: 'That PO line id already exists — try again' });
@@ -168,6 +219,27 @@ router.patch('/:id/link-po', async (req, res) => {
     m.procurementSeen = true;
     m.requesterSeen = false;   // notify the Execution requester
     await m.save();
+    await notifyExec(m);
+    res.json(m);
+  } catch (err) { res.status(400).json({ message: err.message }); }
+});
+
+// ---- Advance the delivery stage (after a PO exists): Ordered → … → Reached Site ----
+// Each change notifies the assigned Execution member with the new % progress. No duplicate alerts.
+router.patch('/:id/delivery-stage', async (req, res) => {
+  try {
+    const stage = String((req.body || {}).stage || '').trim();
+    if (!DELIVERY_STAGES.includes(stage)) return res.status(400).json({ message: 'Invalid delivery stage' });
+    const m = await MaterialRequest.findById(req.params.id);
+    if (!m) return res.status(404).json({ message: 'Request not found' });
+    if (m.status !== 'PO Created') return res.status(400).json({ message: 'Create a PO before updating the delivery stage' });
+    if (m.deliveryStage === stage) return res.json(m);   // no change → no duplicate notification
+    const by = actor(req);
+    m.deliveryStage = stage;
+    log(m, stage, by, `Delivery stage: ${stage}`);
+    m.requesterSeen = false;
+    await m.save();
+    await notifyExec(m);
     res.json(m);
   } catch (err) { res.status(400).json({ message: err.message }); }
 });
