@@ -7,6 +7,7 @@ const PaymentSchema = new mongoose.Schema(
   {
     id: { type: String, required: true, unique: true }, // PMT-001
     po: { type: String, required: true },                // PO-001
+    project: { type: String, default: '' },              // which project of a multi-project PO this payment is for
     vid: String,                                         // vendor id (snapshot for convenience)
     amount: { type: Number, default: 0 },
     date: String,        // payment date  (YYYY-MM-DD)

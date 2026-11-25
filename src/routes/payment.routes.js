@@ -49,7 +49,7 @@ router.post('/', async (req, res) => {
     delete b.id;
     // Duplicate-entry guard: same PO + amount + date + (non-empty) reference.
     if (String(b.refNo || '').trim()) {
-      const dup = await Payment.findOne({ po: b.po, amount: num(b.amount), date: b.date || '', refNo: String(b.refNo).trim() });
+      const dup = await Payment.findOne({ po: b.po, project: String(b.project || ''), amount: num(b.amount), date: b.date || '', refNo: String(b.refNo).trim() });
       if (dup) return res.status(409).json({ message: `A payment of this amount with reference "${String(b.refNo).trim()}" is already recorded for ${b.po}.` });
     }
     const actor = actorOf(req);
