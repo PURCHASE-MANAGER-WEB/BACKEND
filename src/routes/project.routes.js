@@ -1,8 +1,39 @@
 // Procurement project master APIs — purchase_projects collection.
 const router = require('express').Router();
 const Project = require('../models/Project');
+const ProjectPayment = require('../models/ProjectPayment');
 const { protect, restrictTo } = require('../middleware/auth');
 const ProjectHistory = require('../models/ProjectHistory');
+
+// Link a project to Payment Progress. Payment Progress → Client Payment is driven by the
+// purchase_project_payments collection; a project in purchase_projects would otherwise never
+// appear there. So when a project is created (manually OR from an accepted Sales Handover) we
+// make sure it has ONE matching client-order record — seeded from the project, deduped by
+// name, non-fatal. This keeps Projects, Payment Progress and Accounts in sync with no double
+// entry. Existing client orders are never touched.
+const esc = (v) => String(v || '').trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+async function ensureClientOrder(project) {
+  try {
+    const name = String(project && project.name || '').trim();
+    if (!name) return null;
+    const rx = new RegExp('^\\s*' + esc(name) + '\\s*$', 'i');
+    const existing = await ProjectPayment.findOne({ $or: [{ project: rx }, { customerName: rx }] });
+    if (existing) return existing;                 // never duplicate
+    const rows = await ProjectPayment.find({ id: /^PPM-\d+$/ }).select('id').lean();
+    const n = rows.map((r) => parseInt(String(r.id).replace(/\D/g, ''), 10) || 0);
+    const id = 'PPM-' + String((n.length ? Math.max(...n) : 0) + 1).padStart(3, '0');
+    return await ProjectPayment.create({
+      id,
+      project: name,
+      customerName: name,
+      clientName: String(project.client || '').trim(),
+      totalOrderValue: Number(project.quotedPrice || project.budget || 0) || 0,
+      condition: 'Payment Pending',
+      dueDate: '',
+      payments: [],
+    });
+  } catch (e) { return null; /* non-fatal: the project still saves */ }
+}
 
 // Fields tracked in the project change history (label shown to the user).
 const HIST_FIELDS = { name: 'Name', code: 'Code', status: 'Status', client: 'Client', budget: 'Budget', creationDate: 'Creation Date', projectLocation: 'Project Location', contactDetails: 'Contact Details', mobileNumber: 'Mobile', altMobile: 'Alternate Mobile', emailWhatsapp: 'Email / WhatsApp', gstNumber: 'GST Number', billingName: 'Billing Name', siteAddress: 'Site Address', billingAddress: 'Billing Address', salespersonName: 'Salesperson', dateOfOrder: 'Date of Order', proposalRefNo: 'Proposal Ref', leadRef: 'Lead Ref', typeOfProject: 'Type of Project', projectSize: 'Project Size', materialDescription: 'Material Description', startDate: 'Start Date', tentativeCompletionDate: 'Completion Date', quotedPrice: 'Quoted Price', notes: 'Notes' };
@@ -42,6 +73,7 @@ router.post('/', async (req, res) => {
       try {
         const doc = await Project.create(b);
         await logProjectEvent({ projectId: doc.id, action: 'created', req, summary: 'Project created', at: doc.createdAt });
+        await ensureClientOrder(doc);   // make the project appear in Payment Progress (no duplicate entry)
         return res.status(201).json(doc);
       }
       catch (e) { if (e && e.code === 11000) continue; throw e; }
@@ -97,3 +129,4 @@ router.get('/:id/history', async (req, res) => {
 });
 
 module.exports = router;
+module.exports.ensureClientOrder = ensureClientOrder;   // reused by the Sales-Handover acceptance flow
